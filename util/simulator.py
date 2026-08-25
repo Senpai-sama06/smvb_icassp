@@ -231,20 +231,32 @@ class AcousticSceneSimulator:
             for i in range(n):
                 max_attempts = 100
                 for attempt in range(max_attempts):
+                    # If specific angles are provided, bypass the collision check
+                    # so we can explicitly test encroachment.
                     if interferer_angles is not None and len(interferer_angles) > i:
                         theta = interferer_angles[i] * (np.pi / 180)
+                        ignore_collision = True
                     else:
                         theta = random.uniform(0, 2 * np.pi)
+                        ignore_collision = False
 
                     cand_x = mic_center[0] + self.radius * np.cos(theta)
                     cand_y = mic_center[1] + self.radius * np.sin(theta)
                     candidate = np.array([cand_x, cand_y, 1.5])
                     
-                    collision = any(np.linalg.norm(candidate - es) < self.min_src_dist for es in placed_sources)
+                    if ignore_collision:
+                        collision = False
+                    else:
+                        collision = any(np.linalg.norm(candidate - es) < self.min_src_dist for es in placed_sources)
+                        
                     if not collision:
                         room.add_source(candidate)
                         placed_sources.append(candidate)
                         break
+                
+                # Failsafe check
+                if len(placed_sources) <= i + 1:
+                    raise RuntimeError(f"Could not place interferer {i+1} without collision.")
         return placed_sources
 
     def simulate(self, n=1, reverb=True, target_rt60=0.5, interferer_angles=None, save_outputs=False):

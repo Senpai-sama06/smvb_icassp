@@ -1,3 +1,4 @@
 {
-    "python.defaultInterpreterPath": "/home/rpzrm/enigma/bin/python"
+    "python.defaultInterpreterPath": "/home/rpzrm/enigma/bin/python",
+    "python-envs.defaultEnvManager": "ms-python.python:system"
 }

@@ -17,7 +17,7 @@ class AudioDatasetFetcher:
 
     @staticmethod
     def get_audio_files(dataset_name, n_needed, min_duration=5.0):
-        print(f"--- Fetching {n_needed} files (>= {min_duration}s) from: {dataset_name} ---")
+        # print(f"--- Fetching {n_needed} files (>= {min_duration}s) from: {dataset_name} ---")
         files = []
         try:
             if dataset_name == 'librispeech':
@@ -60,7 +60,7 @@ class AudioDatasetFetcher:
     @staticmethod
     def get_single_dataset_files(dataset_name, n_needed, min_duration=5.0):
         """Fetches n_needed files from a specific dataset."""
-        print(f"--- Fetching {n_needed} files (>= {min_duration}s) from: {dataset_name} ---")
+        # print(f"--- Fetching {n_needed} files (>= {min_duration}s) from: {dataset_name} ---")
         files = []
         
         if dataset_name == 'librispeech':
@@ -161,8 +161,8 @@ class AcousticSceneSimulator:
 
     def load_audio_sources(self, n=1):
         """Loads and zero-pads target (LJSpeech) and interferers (LibriSpeech/MUSAN)."""
-        print("\n" + "=" * 40)
-        print("LOADING DISTINCT DATASETS...")
+        # print("\n" + "=" * 40)
+        # print("LOADING DISTINCT DATASETS...")
         
         # Target is ALWAYS LJSpeech
         target_files = self.dataset_fetcher.get_single_dataset_files('ljspeech', 1)
@@ -176,11 +176,11 @@ class AcousticSceneSimulator:
             
         files = target_files + interferer_files[:n]
 
-        print("\nSELECTED AUDIO SOURCES:")
-        print(f"  [TARGET (LJSpeech)]   : {os.path.basename(files[0])}")
-        for i, f_path in enumerate(files[1:]):
-            print(f"  [INTERFERER {i+1}]      : {os.path.basename(f_path)}")
-        print("=" * 40 + "\n")
+        # print("\nSELECTED AUDIO SOURCES:")
+        # print(f"  [TARGET (LJSpeech)]   : {os.path.basename(files[0])}")
+        # for i, f_path in enumerate(files[1:]):
+            # print(f"  [INTERFERER {i+1}]      : {os.path.basename(f_path)}")
+        # print("=" * 40 + "\n")
 
         sigs = []
         max_len = 0

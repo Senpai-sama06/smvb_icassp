@@ -26,6 +26,7 @@ if str(CURRENT_DIR) not in sys.path: sys.path.insert(0, str(CURRENT_DIR))
 from util.simulator import AcousticSceneSimulator
 from util.evaluator import Evaluator
 from algos.ulb import UniversalLinearBeamformer
+from algos.wng_mvdr import get_wng_constrained_loading
 
 def calculate_sisdr(target, est, mix):
     min_len = min(len(target), len(est), len(mix))
@@ -44,17 +45,19 @@ def get_mean_wng(weights):
     return np.mean(wng_db)
 
 def main():
-    print("--- GENERATING FIG 8: SPATIAL ENCROACHMENT SWEEP (CONTROLLED SEED) ---")
+    print("--- GENERATING FIG 8: SPATIAL ENCROACHMENT SWEEP (FINAL NOMENCLATURE) ---")
     fs, n_fft, hop_length, M = 16000, 1024, 256, 4
     
     angles = np.linspace(30, 85, 12)
     delta_thetas = 90 - angles
     
+    # UPDATED LABELS: Perfect symmetry with the rest of the paper
     models = {
-        'nominal': {'color': 'forestgreen', 'ls': '--', 'label': 'Nominal MVDR'},
-        'heavy': {'color': 'crimson', 'ls': ':', 'label': 'Fixed Heavy Load'},
-        'hard': {'color': '#cccccc', 'ls': '-', 'label': r'$\epsilon$ + Hard Threshold', 'lw': 3},
-        'cdr': {'color': '#4682b4', 'ls': '-', 'label': r'$\epsilon$ + Continuous (CDR)', 'lw': 3}
+        'nominal': {'color': 'forestgreen', 'ls': '--', 'label': 'Nominal MVDR', 'lw': 2},
+        'heavy': {'color': 'crimson', 'ls': ':', 'label': 'Fixed Heavy Load', 'lw': 2},
+        'wng': {'color': 'darkorange', 'ls': '-.', 'label': 'WNG-MVDR', 'lw': 2},
+        'hard': {'color': '#cccccc', 'ls': '-', 'label': 'HDR-MVDR', 'lw': 3},
+        'cdr': {'color': '#4682b4', 'ls': '-', 'label': 'CDR-MVDR', 'lw': 3}
     }
     
     results = {m: {'sisdr': [], 'wng': []} for m in models}
@@ -119,13 +122,19 @@ def main():
             seed_sisdr['heavy'].append(calculate_sisdr(target[0], librosa.istft(ulb.apply_weights(mix_stft, w_hev), hop_length=hop_length), mix[0]))
             seed_wng['heavy'].append(get_mean_wng(w_hev))
             
-            # 3. Hard
+            # 3. WNG-Constrained Baseline 
+            z_wng = get_wng_constrained_loading(R_matrix, oracle_rtf, gamma_db=0.0, z_init_max=0.5)
+            w_wng = ulb.process(R_matrix, oracle_rtf, mu_inv, zeta=z_wng * trace_power)
+            seed_sisdr['wng'].append(calculate_sisdr(target[0], librosa.istft(ulb.apply_weights(mix_stft, w_wng), hop_length=hop_length), mix[0]))
+            seed_wng['wng'].append(get_mean_wng(w_wng))
+            
+            # 4. Hard (HDR-MVDR)
             z_hard = np.where(epsilon > eps_0, 0.5, 1e-5) * trace_power
             w_hard = ulb.process(R_matrix, oracle_rtf, mu_inv, zeta=z_hard)
             seed_sisdr['hard'].append(calculate_sisdr(target[0], librosa.istft(ulb.apply_weights(mix_stft, w_hard), hop_length=hop_length), mix[0]))
             seed_wng['hard'].append(get_mean_wng(w_hard))
             
-            # 4. Continuous (CDR)
+            # 5. Continuous (CDR-MVDR)
             z_cont = (1e-5 + (0.5 - 1e-5) / (1.0 + np.exp(-25.0 * (epsilon - eps_0)))) * trace_power
             w_cont = ulb.process(R_matrix, oracle_rtf, mu_inv, zeta=z_cont)
             seed_sisdr['cdr'].append(calculate_sisdr(target[0], librosa.istft(ulb.apply_weights(mix_stft, w_cont), hop_length=hop_length), mix[0]))
@@ -155,14 +164,11 @@ def main():
     axs[1].set_xlabel(r'Angular Separation $\Delta\theta$ (°)', fontweight='bold')
     axs[1].grid(True, linestyle='--', alpha=0.6)
     
-    # Invert X-axis so it reads left-to-right as "getting harder"
-    # axs[1].invert_xaxis()
-    
-    fig.legend(handles=axs[0].get_lines(), loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=2, frameon=True, edgecolor='black')
+    fig.legend(handles=axs[0].get_lines(), loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=5, frameon=True, edgecolor='black', columnspacing=1.0)
     plt.tight_layout(rect=[0, 0, 1, 0.92])
     
     os.makedirs("results", exist_ok=True)
-    plt.savefig('results/fig8_spatial_encroachment.png', dpi=1200, bbox_inches='tight')
+    plt.savefig('results/fig8_spatial_encroachment.pdf', dpi=300, bbox_inches='tight') 
     print("\n✅ Saved 'results/fig8_spatial_encroachment.pdf'")
 
 if __name__ == "__main__":

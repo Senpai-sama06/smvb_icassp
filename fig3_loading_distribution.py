@@ -100,9 +100,9 @@ def main():
     # --- Plotting ---
     fig, ax = plt.subplots(figsize=(7, 4.5))
     
-    # Plot ECDFs
-    ax.plot(z_kap_sorted, p_kap, color='#888888', linewidth=3.5, label=r'Condition Number ($\kappa$) Controller', zorder=3)
-    ax.plot(z_eps_sorted, p_eps, color='#DC143C', linewidth=3.5, label=r'Spatial Subspace ($\epsilon$) Controller', zorder=3)
+    # Plot ECDFs with updated labels linking ablation terms to final system names
+    ax.plot(z_kap_sorted, p_kap, color='#888888', linewidth=3.5, label=r'$\kappa$-Continuous Controller', zorder=3)
+    ax.plot(z_eps_sorted, p_eps, color='#DC143C', linewidth=3.5, label=r'$\epsilon$-Continuous (CDR-MVDR)', zorder=3)
     
     # Highlight Saturation Zone
     ax.axvspan(sat_thresh, 0.505, color='red', alpha=0.08, label=r'Saturation Zone ($> 0.9 \zeta_{max}$)', zorder=1)
@@ -111,7 +111,7 @@ def main():
     # Annotations right-aligned inside the safe empty space to prevent clipping
     ax.text(0.495, 0.65, f"$\kappa$ Saturated: {sat_kap:.1f}%", color='black', fontweight='bold', fontsize=10, 
             ha='right', va='center', bbox=dict(facecolor='white', alpha=0.9, edgecolor='#888888', boxstyle='round,pad=0.3'), zorder=4)
-    ax.text(0.495, 0.55, f"$\epsilon$ Saturated: {sat_eps:.1f}%", color='#DC143C', fontweight='bold', fontsize=10, 
+    ax.text(0.495, 0.55, f"$\epsilon$ (CDR) Saturated: {sat_eps:.1f}%", color='#DC143C', fontweight='bold', fontsize=10, 
             ha='right', va='center', bbox=dict(facecolor='white', alpha=0.9, edgecolor='#DC143C', boxstyle='round,pad=0.3'), zorder=4)
     
     ax.set_title('Cumulative Distribution of Adaptive Loading ($\zeta$)', fontweight='bold')
@@ -125,7 +125,8 @@ def main():
     
     plt.tight_layout()
     os.makedirs("results", exist_ok=True)
-    plt.savefig('results/fig3_loading_distribution.png', dpi=1200, bbox_inches='tight')
+    # Changed to explicitly save as PDF
+    plt.savefig('results/fig3_loading_distribution.pdf', dpi=300, bbox_inches='tight')
     print("\n✅ Saved 'results/fig3_loading_distribution.pdf'")
 
 if __name__ == "__main__":

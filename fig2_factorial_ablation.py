@@ -5,6 +5,8 @@ import librosa
 import matplotlib.pyplot as plt
 from scipy.signal import lfilter
 from pathlib import Path
+import random
+import time
 
 # --- IEEE Formatting Tweaks ---
 plt.rcParams.update({
@@ -24,6 +26,7 @@ if str(CURRENT_DIR) not in sys.path: sys.path.insert(0, str(CURRENT_DIR))
 from util.simulator import AcousticSceneSimulator
 from util.evaluator import Evaluator
 from algos.ulb import UniversalLinearBeamformer
+from algos.wng_mvdr import get_wng_constrained_loading
 
 class Factorial_Ablation_CDR:
     def __init__(self, num_mics=4, control='epsilon', policy='continuous', zeta_min=1e-5, zeta_max=0.5):
@@ -52,6 +55,9 @@ class Factorial_Ablation_CDR:
                 z_factor.fill(self.zeta_min)
             elif self.policy == 'sledgehammer':
                 z_factor.fill(self.zeta_max)
+        elif self.control == 'wng_baseline':
+            # Run the iterative WNG-constrained loading (dev-tuned target)
+            z_factor = get_wng_constrained_loading(R_matrix, target_rtf, gamma_db=0.0, z_init_max=self.zeta_max)
         else:
             if self.control == 'epsilon':
                 d_exp = target_rtf[:, np.newaxis, :]
@@ -95,70 +101,90 @@ def calculate_sisdr(target, est, mix):
     return si_sdr(t, e) - si_sdr(t, m)
 
 def main():
-    print("--- GENERATING FIG 2: FACTORIAL 2x2 ABLATION (IEEE PDF) ---")
+    print("--- GENERATING FIG 2: FACTORIAL 2x2 ABLATION (FINAL NOMENCLATURE) ---")
     fs, n_fft, hop_length, M = 16000, 1024, 256, 4 
     
-    simulator = AcousticSceneSimulator(num_mics=M, snr_target_db=15, fs=fs)
-    evaluator = Evaluator(ref_mic=0)
-    
-    mix, target, _, _ = simulator.simulate(n=1, reverb=True, target_rt60=0.2, interferer_angles=[75], save_outputs=False)
-    mix = mix.T; target = target.T
-    mix_stft = np.stack([librosa.stft(mix[m], n_fft=n_fft, hop_length=hop_length) for m in range(M)])
-    target_stft = np.stack([librosa.stft(target[m], n_fft=n_fft, hop_length=hop_length) for m in range(M)])
-    oracle_rtf = evaluator.get_oracle_rtf(target_stft, ref_mic=0)
-    
-    y = mix_stft.transpose(1, 2, 0)[..., np.newaxis]
-    y_conj = y.conj().transpose(0, 1, 3, 2)
-    R_matrix = lfilter([1 - 0.98], [1, -0.98], np.matmul(y, y_conj), axis=1)
-
     configs = [
-        ('static', 'nominal'), ('static', 'sledgehammer'),
-        ('kappa', 'hard'), ('kappa', 'continuous'),
-        ('epsilon', 'hard'), ('epsilon', 'continuous')
+        ('static', 'nominal'), 
+        ('static', 'sledgehammer'), 
+        ('wng_baseline', 'constrained'), 
+        ('kappa', 'hard'), 
+        ('kappa', 'continuous'), 
+        ('epsilon', 'hard'), 
+        ('epsilon', 'continuous')
     ]
     
-    res = {}
-    for ctrl, pol in configs:
-        cdr = Factorial_Ablation_CDR(num_mics=M, control=ctrl, policy=pol)
-        weights, z_factor = cdr.process(R_matrix, oracle_rtf)
-        est = librosa.istft(cdr.apply_weights(mix_stft, weights), hop_length=hop_length)
+    # Store Monte Carlo results
+    mc_results = {f"{c}_{p}": {'sisdr': [], 'jitter': [], 'p_sat': [], 'std_z': []} for c, p in configs}
+    
+    num_seeds = 10 # Loop over 10 realizations for standard deviation
+    start_time_total = time.time()
+    
+    for seed in range(42, 42 + num_seeds):
+        print(f">>> Running Monte Carlo Seed {seed} ({seed-41}/{num_seeds})... <<<")
+        np.random.seed(seed)
+        random.seed(seed)
         
-        res[f"{ctrl}_{pol}"] = {
-            'sisdr': calculate_sisdr(target[0], est, mix[0]),
-            'jitter': np.mean(np.sum(np.abs(weights[:, 1:, :] - weights[:, :-1, :])**2, axis=-1)),
-            'p_sat': np.mean(z_factor > 0.9 * 0.5) * 100,
-            'std_z': np.std(z_factor)
-        }
+        simulator = AcousticSceneSimulator(num_mics=M, snr_target_db=15, fs=fs)
+        evaluator = Evaluator(ref_mic=0)
+        
+        mix, target, _, _ = simulator.simulate(n=1, reverb=True, target_rt60=0.2, interferer_angles=[75], save_outputs=False)
+        mix = mix.T; target = target.T
+        mix_stft = np.stack([librosa.stft(mix[m], n_fft=n_fft, hop_length=hop_length) for m in range(M)])
+        target_stft = np.stack([librosa.stft(target[m], n_fft=n_fft, hop_length=hop_length) for m in range(M)])
+        oracle_rtf = evaluator.get_oracle_rtf(target_stft, ref_mic=0)
+        
+        y = mix_stft.transpose(1, 2, 0)[..., np.newaxis]
+        y_conj = y.conj().transpose(0, 1, 3, 2)
+        R_matrix = lfilter([1 - 0.98], [1, -0.98], np.matmul(y, y_conj), axis=1)
+
+        for ctrl, pol in configs:
+            cdr = Factorial_Ablation_CDR(num_mics=M, control=ctrl, policy=pol)
+            weights, z_factor = cdr.process(R_matrix, oracle_rtf)
+            est = librosa.istft(cdr.apply_weights(mix_stft, weights), hop_length=hop_length)
+            
+            mc_results[f"{ctrl}_{pol}"]['sisdr'].append(calculate_sisdr(target[0], est, mix[0]))
+            mc_results[f"{ctrl}_{pol}"]['jitter'].append(np.mean(np.sum(np.abs(weights[:, 1:, :] - weights[:, :-1, :])**2, axis=-1)))
+            mc_results[f"{ctrl}_{pol}"]['p_sat'].append(np.mean(z_factor > 0.9 * 0.5) * 100)
+            mc_results[f"{ctrl}_{pol}"]['std_z'].append(np.std(z_factor))
+
+    print(f"\nCompleted {num_seeds} simulations in {time.time() - start_time_total:.2f} seconds.")
+
+    # Aggregate means and stds
+    res_mean = {k: {metric: np.mean(v[metric]) for metric in v} for k, v in mc_results.items()}
+    res_std  = {k: {metric: np.std(v[metric]) for metric in v} for k, v in mc_results.items()}
 
     # --- Plotting ---
-    fig, axs = plt.subplots(2, 2, figsize=(8.5, 6.5)) # Scaled better for IEEE columns
-    
+    fig, axs = plt.subplots(2, 2, figsize=(8.5, 6.5)) 
     groups = ['kappa', 'epsilon']
-    # Added newlines to prevent overlap
     labels = ['Condition Number\nBaseline ($\kappa$)', 'Spatial Subspace\nProposed ($\epsilon$)'] 
     x = np.arange(len(groups))
     width = 0.35
     
     metrics = [
-        ('sisdr', '(a) SI-SDRi', 'dB', axs[0, 0], False),
+        ('sisdr', '(a) SI-SDRi (dB)', 'dB', axs[0, 0], False),
         ('p_sat', r'(b) Saturation Fraction ($P_{sat} > 90\%$)', '% of frames', axs[0, 1], False),
         ('std_z', r'(c) Std. Deviation of $\zeta$', 'Standard Deviation', axs[1, 0], False),
         ('jitter', r'(d) Filter Jitter ($\|\Delta \mathbf{w}\|_2^2$)', 'Log Scale', axs[1, 1], True)
     ]
     
     for key, title, ylabel, ax, is_log in metrics:
-        hard_vals = [res[f"{g}_hard"][key] for g in groups]
-        cont_vals = [res[f"{g}_continuous"][key] for g in groups]
+        hard_mean = [res_mean[f"{g}_hard"][key] for g in groups]
+        hard_std  = [res_std[f"{g}_hard"][key] for g in groups]
+        cont_mean = [res_mean[f"{g}_continuous"][key] for g in groups]
+        cont_std  = [res_std[f"{g}_continuous"][key] for g in groups]
         
-        bar1 = ax.bar(x - width/2, hard_vals, width, label='Hard Threshold', color='#cccccc', edgecolor='black', zorder=3)
-        bar2 = ax.bar(x + width/2, cont_vals, width, label='Continuous Policy', color='#4682b4', edgecolor='black', zorder=3)
+        # Plot bars with error bars
+        bar1 = ax.bar(x - width/2, hard_mean, width, yerr=hard_std, capsize=4, label='Hard Threshold', color='#cccccc', edgecolor='black', zorder=3)
+        bar2 = ax.bar(x + width/2, cont_mean, width, yerr=cont_std, capsize=4, label='Continuous Policy', color='#4682b4', edgecolor='black', zorder=3)
         
-        # Only plot reference lines on relevant axes to avoid 0-line clutter
         if key in ['sisdr', 'jitter']:
-            line1 = ax.axhline(res['static_nominal'][key], color='forestgreen', linestyle='--', linewidth=1.5, label='Nominal MVDR', zorder=4)
-            line2 = ax.axhline(res['static_sledgehammer'][key], color='crimson', linestyle=':', linewidth=1.5, label='Fixed Heavy Load', zorder=4)
+            line1 = ax.axhline(res_mean['static_nominal'][key], color='forestgreen', linestyle='--', linewidth=1.5, label='Nominal MVDR', zorder=4)
+            line2 = ax.axhline(res_mean['static_sledgehammer'][key], color='crimson', linestyle=':', linewidth=1.5, label='Fixed Heavy Load', zorder=4)
+            # UPDATED LABEL HERE
+            line3 = ax.axhline(res_mean['wng_baseline_constrained'][key], color='darkorange', linestyle='-.', linewidth=1.5, label='WNG-MVDR', zorder=4)
         elif key == 'p_sat':
-            line2 = ax.axhline(res['static_sledgehammer'][key], color='crimson', linestyle=':', linewidth=1.5, label='Fixed Heavy Load', zorder=4)
+            line2 = ax.axhline(res_mean['static_sledgehammer'][key], color='crimson', linestyle=':', linewidth=1.5, label='Fixed Heavy Load', zorder=4)
         
         ax.set_title(title, fontweight='bold')
         ax.set_ylabel(ylabel)
@@ -168,20 +194,16 @@ def main():
         
         if is_log: 
             ax.set_yscale('log')
-            ax.set_ylim(bottom=5e-4) # Give some breathing room to the jitter plot
+            ax.set_ylim(bottom=5e-4) 
             
-    # Add a single global legend at the top of the figure
     handles = [bar1, bar2]
-    if 'line1' in locals(): handles.append(line1)
-    if 'line2' in locals(): handles.append(line2)
+    if 'line1' in locals(): handles.extend([line1, line2, line3])
     
-    fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=4, frameon=True, edgecolor='black')
-    
-    plt.tight_layout(rect=[0, 0, 1, 0.92]) # Leave space at the top for the legend
+    fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 1.02), ncol=5, frameon=True, edgecolor='black')
+    plt.tight_layout(rect=[0, 0, 1, 0.95]) 
     
     os.makedirs("results", exist_ok=True)
-    # Save as PDF for vector graphics integration in LaTeX
-    plt.savefig('results/fig2_factorial_ablation.png', dpi=300, bbox_inches='tight')
+    plt.savefig('results/fig2_factorial_ablation.pdf', dpi=300, bbox_inches='tight')
     print("\n✅ Saved 'results/fig2_factorial_ablation.pdf'")
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ plt.rcParams.update({
     'xtick.labelsize': 10,
     'ytick.labelsize': 10,
     'legend.fontsize': 10,
-    'figure.titlesize': 14
+    'figure.titlesize': 13 # Slightly smaller to fit the acronym
 })
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -38,11 +38,12 @@ def calculate_sisdr(target, est, mix):
     return si_sdr(t, e) - si_sdr(t, m)
 
 def main():
-    print("--- GENERATING FIG 6: 1/M vs ORACLE GAP (OPTIMIZED) ---")
+    print("--- GENERATING FIG 6: 1/M vs ORACLE GAP (FINAL NOMENCLATURE) ---")
     fs, n_fft, hop_length = 16000, 1024, 256
     array_sizes = [2, 4, 8]
     
-    thresholds = np.linspace(0.05, 0.70, 20)
+    # Sweep extended down to 0.005 to capture the true M=8 optimum
+    thresholds = np.linspace(0.005, 0.70, 30)
     results = {M: [] for M in array_sizes}
 
     for M in array_sizes:
@@ -131,29 +132,33 @@ def main():
             anchor = (proposed_thresh, proposed_sisdr)
             xytext, ha, va = (15, -15), 'left', 'top'
         elif M == 8:
+            # Shifted to the left slightly to avoid the rising curve
             anchor = (proposed_thresh, proposed_sisdr)
-            xytext, ha, va = (15, 15), 'left', 'bottom'
+            xytext, ha, va = (-15, 20), 'right', 'bottom' 
             
         ax.annotate(lbl, xy=anchor, xytext=xytext, textcoords='offset points',
                     ha=ha, va=va, fontsize=10, fontweight='bold', color='black',
                     bbox=dict(facecolor='white', alpha=0.95, edgecolor=colors[M], linewidth=1.5, boxstyle='round,pad=0.3'), zorder=7)
 
-    ax.set_title(r'Oracle Gap Analysis: $1/M$ Transition Rule vs. Oracle Threshold ($\epsilon_0^\star$)', fontweight='bold')
+    # UPDATED TITLE
+    ax.set_title(r'CDR-MVDR Oracle Gap: $1/M$ Transition Rule vs. Evaluated Best ($\epsilon_{0,\mathrm{best}}$)', fontweight='bold')
     ax.set_xlabel(r'Spatial Boundary Threshold $\epsilon_0$', fontweight='bold')
     ax.set_ylabel('SI-SDR Improvement (dB)', fontweight='bold')
     ax.grid(True, linestyle='--', alpha=0.6, zorder=0)
     
     import matplotlib.lines as mlines
     leg_lines = [mlines.Line2D([], [], color=colors[M], linewidth=3, label=f'$M={M}$ Array') for M in array_sizes]
+    
+    # UPDATED LEGEND
     leg_markers = [
-        mlines.Line2D([], [], color='white', marker='*', markerfacecolor='gold', markeredgecolor='black', markersize=16, label=r'Oracle Optimum ($\epsilon_0^\star$)'),
-        mlines.Line2D([], [], color='white', marker='o', markerfacecolor='gray', markeredgecolor='black', markersize=10, label=r'Proposed $1/M$ Heuristic')
+        mlines.Line2D([], [], color='white', marker='*', markerfacecolor='gold', markeredgecolor='black', markersize=16, label=r'Evaluated Best ($\epsilon_{0,\mathrm{best}}$)'),
+        mlines.Line2D([], [], color='white', marker='o', markerfacecolor='gray', markeredgecolor='black', markersize=10, label=r'CDR-MVDR ($1/M$ Heuristic)')
     ]
-    ax.legend(handles=leg_lines + leg_markers, loc='lower right', framealpha=0.9, edgecolor='black')
+    ax.legend(handles=leg_lines + leg_markers, loc='lower right', framealpha=0.95, edgecolor='black')
     
     plt.tight_layout()
     os.makedirs("results", exist_ok=True)
-    plt.savefig('results/fig6_oracle_gap.png', dpi=1200, bbox_inches='tight')
+    plt.savefig('results/fig6_oracle_gap.pdf', dpi=300, bbox_inches='tight')
     print("\n✅ Saved 'results/fig6_oracle_gap.pdf'")
 
 if __name__ == "__main__":

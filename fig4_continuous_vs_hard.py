@@ -97,7 +97,9 @@ def main():
     R_matrix = lfilter([1 - 0.98], [1, -0.98], np.matmul(y, y_conj), axis=1)
 
     policies = ['hard', 'continuous']
-    labels = [r'$\epsilon$ + Hard Threshold', r'$\epsilon$ + Continuous (CDR)']
+    
+    # UPDATED LABELS: Using the new formal system acronyms
+    labels = ['HDR-MVDR', 'CDR-MVDR']
     
     res_sisdr = []
     res_jitter = []
@@ -131,7 +133,9 @@ def main():
     plt.suptitle('Adaptation Policy Ablation', fontsize=15, fontweight='bold')
     plt.tight_layout()
     os.makedirs("results", exist_ok=True)
-    plt.savefig('results/fig4_continuous_vs_hard.png', dpi=1200, bbox_inches='tight')
+    
+    # UPDATED SAVE FIG: Natively save as PDF
+    plt.savefig('results/fig4_continuous_vs_hard.pdf', dpi=300, bbox_inches='tight')
     print("\n✅ Saved 'results/fig4_continuous_vs_hard.pdf'")
 
 if __name__ == "__main__":

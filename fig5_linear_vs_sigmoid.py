@@ -98,8 +98,8 @@ def main():
     R_matrix = lfilter([1 - 0.98], [1, -0.98], np.matmul(y, y_conj), axis=1)
 
     modes = ['linear', 'sigmoid']
-    labels = ['Linear Mapping', 'Logistic Sigmoid\n(Proposed)']
-    colors = ['#4682b4', '#DC143C'] # Steelblue and Crimson
+    labels = ['Linear Mapping', 'CDR-MVDR\n(Sigmoid)']
+    colors = ['#4682b4', '#DC143C'] 
     
     res_sisdr = []
     res_jitter = []
@@ -113,7 +113,6 @@ def main():
         res_jitter.append(np.mean(np.sum(np.abs(weights[:, 1:, :] - weights[:, :-1, :])**2, axis=-1)))
 
     # --- Plotting 3-Panel Layout ---
-    # 1x3 grid, perfect for spanning the top of an IEEE page
     fig, axs = plt.subplots(1, 3, figsize=(12, 4))
     
     # Panel (a): The Transfer Functions
@@ -121,23 +120,24 @@ def main():
     eps_0 = 1.0 / M
     z_min, z_max, slope = 1e-5, 0.5, 25.0
     
-    # Generate Sigmoid curve
     z_sig = z_min + (z_max - z_min) / (1.0 + np.exp(-slope * (eps_vals - eps_0)))
     
-    # Generate Linear curve
     width = 0.1
     linear_interp = (eps_vals - (eps_0 - width)) / (2 * width)
     linear_interp = np.clip(linear_interp, 0.0, 1.0)
     z_lin = z_min + (z_max - z_min) * linear_interp
 
-    axs[0].plot(eps_vals, z_lin, color=colors[0], linewidth=3, label='Linear Ramp', zorder=3)
-    axs[0].plot(eps_vals, z_sig, color=colors[1], linewidth=3, label='Logistic Sigmoid', zorder=3)
+    # SHORTENED LABELS TO KEEP THE BOX COMPACT
+    axs[0].plot(eps_vals, z_lin, color=colors[0], linewidth=3, label='Linear Mapping', zorder=3)
+    axs[0].plot(eps_vals, z_sig, color=colors[1], linewidth=3, label='CDR-MVDR', zorder=3)
     axs[0].axvline(eps_0, color='black', linestyle=':', linewidth=2, label=r'Boundary $\epsilon_0$', zorder=2)
     axs[0].set_title(r'(a) $\epsilon$-to-$\zeta$ mappings', fontweight='bold')
     axs[0].set_xlabel(r'Spatial Subspace Leakage $\epsilon$')
     axs[0].set_ylabel(r'Loading Multiplier $\zeta$')
     axs[0].grid(True, linestyle='--', alpha=0.6, zorder=0)
-    axs[0].legend(loc='lower right')
+    
+    # MOVED LEGEND TO THE BOTTOM RIGHT
+    axs[0].legend(loc='lower right', framealpha=0.95, edgecolor='black')
     
     # Panel (b): SI-SDRi
     axs[1].bar(labels, res_sisdr, color=colors, edgecolor='black', width=0.5, zorder=3)
@@ -154,7 +154,7 @@ def main():
     
     plt.tight_layout()
     os.makedirs("results", exist_ok=True)
-    plt.savefig('results/fig5_linear_vs_sigmoid.png', dpi=1200, bbox_inches='tight')
+    plt.savefig('results/fig5_linear_vs_sigmoid.pdf', dpi=300, bbox_inches='tight')
     print("\n✅ Saved 'results/fig5_linear_vs_sigmoid.pdf'")
 
 if __name__ == "__main__":

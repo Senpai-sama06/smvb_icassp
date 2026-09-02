@@ -25,6 +25,7 @@ if str(CURRENT_DIR) not in sys.path: sys.path.insert(0, str(CURRENT_DIR))
 from util.simulator import AcousticSceneSimulator
 from util.evaluator import Evaluator
 from algos.ulb import UniversalLinearBeamformer
+from algos.wng_mvdr import get_wng_constrained_loading
 
 def calculate_sisdr(target, est, mix):
     min_len = min(len(target), len(est), len(mix))
@@ -38,10 +39,8 @@ def calculate_sisdr(target, est, mix):
     return si_sdr(t, e) - si_sdr(t, m)
 
 def get_mean_wng(weights):
-    # WNG = 10 * log10( 1 / ||w||^2 )
     w_norm_sq = np.sum(np.abs(weights)**2, axis=-1) + 1e-12
-    wng_db = -10 * np.log10(w_norm_sq)
-    return np.mean(wng_db)
+    return np.mean(-10 * np.log10(w_norm_sq))
 
 def main():
     print("--- GENERATING FIG 7: ROBUSTNESS-SEPARATION FRONTIER ---")
@@ -83,7 +82,7 @@ def main():
     F, T, _, _ = R_matrix.shape
     mu_inv = np.zeros((F, T), dtype=np.float32)
 
-    # 1. Sweep Static Loading (The Frontier Curve)
+    # 1. Sweep Static Loading
     print(">>> Mapping Static Loading Frontier... <<<")
     zetas_static = np.logspace(-5, np.log10(0.5), 30)
     sweep_sisdr = []
@@ -113,6 +112,13 @@ def main():
     cont_sisdr = calculate_sisdr(target[0], est_cont, mix[0])
     cont_wng = get_mean_wng(w_cont)
     
+    # 4. WNG-Constrained Baseline
+    z_wng = get_wng_constrained_loading(R_matrix, oracle_rtf, gamma_db=0.0, z_init_max=0.5)
+    w_wng = ulb.process(R_matrix, oracle_rtf, mu_inv, zeta=z_wng * trace_power)
+    est_wng = librosa.istft(ulb.apply_weights(mix_stft, w_wng), hop_length=hop_length)
+    wng_sisdr = calculate_sisdr(target[0], est_wng, mix[0])
+    wng_wng = get_mean_wng(w_wng)
+
     print(f"    Completed in {time.time() - start_time:.2f} seconds.")
 
     # --- Plotting ---
@@ -121,13 +127,14 @@ def main():
     # Plot the Frontier
     ax.plot(sweep_wng, sweep_sisdr, color='gray', linewidth=3, label='Static-loading sweep', zorder=2)
     
-    # Plot Anchor Points from the sweep
-    ax.scatter(sweep_wng[0], sweep_sisdr[0], color='forestgreen', marker='s', s=120, edgecolor='black', label='Nominal MVDR ($\\zeta_{min}$)', zorder=4)
-    ax.scatter(sweep_wng[-1], sweep_sisdr[-1], color='darkred', marker='v', s=150, edgecolor='black', label='Fixed Heavy Load ($\\zeta_{max}$)', zorder=4)
+    # Plot Anchor Points from the sweep (UPDATED LABELS)
+    ax.scatter(sweep_wng[0], sweep_sisdr[0], color='forestgreen', marker='s', s=120, edgecolor='black', label='Nominal MVDR', zorder=4)
+    ax.scatter(sweep_wng[-1], sweep_sisdr[-1], color='darkred', marker='v', s=150, edgecolor='black', label='Fixed Heavy Load', zorder=4)
     
-    # Plot Adaptive Policies
-    ax.scatter(hard_wng, hard_sisdr, color='#cccccc', marker='o', s=180, edgecolor='black', label=r'$\epsilon$ + Hard Threshold', zorder=5)
-    ax.scatter(cont_wng, cont_sisdr, color='#4682b4', marker='*', s=400, edgecolor='black', label=r'$\epsilon$ + Continuous (CDR)', zorder=6)
+    # Plot Adaptive Policies (UPDATED LABELS)
+    ax.scatter(wng_wng, wng_sisdr, color='darkorange', marker='X', s=200, edgecolor='black', label='WNG-MVDR', zorder=5)
+    ax.scatter(hard_wng, hard_sisdr, color='#cccccc', marker='o', s=180, edgecolor='black', label='HDR-MVDR', zorder=5)
+    ax.scatter(cont_wng, cont_sisdr, color='#4682b4', marker='*', s=400, edgecolor='black', label='CDR-MVDR', zorder=6)
     
     ax.set_title('Robustness–Separation Trade-off', fontweight='bold')
     ax.set_xlabel('Mean WNG (dB)', fontweight='bold')
@@ -138,7 +145,7 @@ def main():
     
     plt.tight_layout()
     os.makedirs("results", exist_ok=True)
-    plt.savefig('results/fig7_pareto_frontier.png', dpi=1200, bbox_inches='tight')
+    plt.savefig('results/fig7_pareto_frontier.pdf', dpi=300, bbox_inches='tight')
     print("\n✅ Saved 'results/fig7_pareto_frontier.pdf'")
 
 if __name__ == "__main__":
